@@ -12,6 +12,8 @@ const warningAckStorageKey = "lavish-axi:warning-ack:" + key;
 const internalQueueKeyField = "_lavishQueueKey";
 const initialChat = Array.isArray(sessionData.initialChat) ? sessionData.initialChat : [];
 const MODE_TOGGLE_HOTKEY_KEY = String(sessionData.modeToggleHotkeyKey || "").toLowerCase();
+/** @type {Array<{ id: string, selector: string, tag: string, text: string, prompt: string, at: string, target?: unknown }>} */
+let sentAnnotations = Array.isArray(sessionData.initialAnnotations) ? sessionData.initialAnnotations.slice() : [];
 
 function isModeToggleHotkeyEvent(event) {
   if (event.shiftKey || event.altKey) return false;
@@ -21,6 +23,7 @@ function isModeToggleHotkeyEvent(event) {
 const frame = /** @type {HTMLIFrameElement} */ (document.getElementById("artifact"));
 const panelScroll = /** @type {HTMLDivElement} */ (document.getElementById("panelScroll"));
 const annotationPills = /** @type {HTMLDivElement} */ (document.getElementById("annotationPills"));
+const annotationsSent = /** @type {HTMLDivElement} */ (document.getElementById("annotationsSent"));
 const chatLog = /** @type {HTMLDivElement} */ (document.getElementById("chatLog"));
 const chatInput = /** @type {HTMLTextAreaElement} */ (document.getElementById("chatInput"));
 const sendButton = /** @type {HTMLButtonElement} */ (document.getElementById("send"));
@@ -188,11 +191,70 @@ function persistQueuedPrompts() {
   }
 }
 
+// The row itself is the affordance - a separate pin control was redundant with it. Clicks on
+// nested controls (the pill's remove button) still win, because they stop propagation first.
+function bindRevealTargets(container, selectorFor) {
+  for (const child of container.children) {
+    const row = /** @type {HTMLElement} */ (child);
+    const selector = selectorFor(row);
+    if (!selector) continue;
+    row.classList.add("reveal-target");
+    row.addEventListener("click", () => postToFrame({ type: "lavish:revealElement", selector }));
+  }
+}
+
+function annotationTargetsList() {
+  const list = [];
+  for (const prompt of queued) {
+    if (prompt.id && prompt.selector) list.push({ id: prompt.id, selector: prompt.selector, target: prompt.target });
+  }
+  for (const item of sentAnnotations) {
+    if (item.id && item.selector) list.push({ id: item.id, selector: item.selector, target: item.target });
+  }
+  return list;
+}
+
+function postAnnotationTargets() {
+  postToFrame({ type: "lavish:setAnnotationTargets", targets: annotationTargetsList() });
+}
+
+function renderAnnotations() {
+  annotationsSent.replaceChildren();
+  for (const item of sentAnnotations) {
+    const entry = document.createElement("div");
+    entry.className = "annotation-entry";
+    entry.dataset.annotationId = item.id || "";
+    entry.dataset.selector = item.selector || "";
+    const text = document.createElement("span");
+    text.className = "annotation-entry-text";
+    text.textContent = item.prompt;
+    entry.appendChild(text);
+    annotationsSent.appendChild(entry);
+  }
+  bindRevealTargets(annotationsSent, (row) => row.dataset.selector || "");
+  postAnnotationTargets();
+}
+
+function openAnnotationEntry(id) {
+  const target = String(id || "");
+  if (!target) return;
+  const entry = /** @type {HTMLElement | undefined} */ (
+    [...annotationsSent.children].find((child) => /** @type {HTMLElement} */ (child).dataset?.annotationId === target)
+  );
+  if (!entry) return;
+  scrollElementIntoView(entry);
+  entry.classList.add("annotation-highlight");
+  setTimeout(() => entry.classList.remove("annotation-highlight"), 2400);
+}
+
 function render() {
   annotationPills.innerHTML = queued
     .map(
       (prompt, index) =>
-        '<div class="pill-wrap"><div class="pill"><span class="pill-preview">' +
+        '<div class="pill-wrap" data-selector="' +
+        escapeHtml(prompt.selector || "") +
+        '"><div class="pill">' +
+        '<span class="pill-preview">' +
         escapeHtml(prompt.prompt) +
         '</span><button class="pill-close" type="button" aria-label="Remove queued prompt" data-index="' +
         index +
@@ -212,8 +274,10 @@ function render() {
     const closeButton = /** @type {HTMLButtonElement} */ (button);
     closeButton.addEventListener("click", (event) => removeQueuedPrompt(Number(closeButton.dataset.index), event));
   }
+  bindRevealTargets(annotationPills, (row) => row.dataset.selector || "");
   updateSendState();
   scrollPanelToBottom();
+  postAnnotationTargets();
 }
 
 function updateSendState() {
@@ -462,12 +526,25 @@ async function submitQueuedOnce() {
     }
     throw new Error("failed to submit queued prompts");
   }
+  const sentAt = new Date().toISOString();
   for (const prompt of prompts) {
     const index = queued.indexOf(prompt);
     if (index !== -1) queued.splice(index, 1);
+    if (prompt.tag !== "message" && prompt.selector) {
+      sentAnnotations.push({
+        id: prompt.id || "",
+        selector: prompt.selector,
+        target: prompt.target,
+        tag: prompt.tag,
+        text: prompt.text,
+        prompt: prompt.prompt,
+        at: sentAt,
+      });
+    }
   }
   persistQueuedPrompts();
   render();
+  renderAnnotations();
   if (shouldEndSession) {
     endAfterSubmit = false;
     markSessionEnded();
@@ -1766,6 +1843,7 @@ window.addEventListener("message", (event) => {
   if (msg.type === "lavish:sendQueuedPrompts") sendQueued();
   if (msg.type === "lavish:endSession") endSession();
   if (msg.type === "lavish:toggleAnnotationMode") toggleAnnotationMode();
+  if (msg.type === "lavish:openAnnotation") openAnnotationEntry(msg.id);
 });
 
 loadFrame();
@@ -1852,6 +1930,7 @@ document.addEventListener(
 frame.addEventListener("load", () => {
   if (artifactSpokeToken !== artifactLoadToken) armArtifactAvailabilityProbe(artifactLoadToken);
   postToFrame({ type: "lavish:setAnnotationMode", enabled: annotation && !ended });
+  postAnnotationTargets();
   // Replay the pre-reload scroll position so hot reloads don't jump the artifact to the top.
   postToFrame({ type: "lavish:restoreScroll", x: lastScroll.x, y: lastScroll.y });
   if (lastReviewState) postToFrame({ type: "lavish:restoreReviewState", state: lastReviewState });
@@ -1880,5 +1959,6 @@ events.addEventListener("open", () => refreshLayoutWarnings());
 render();
 setWarningsDrawerOpen(false);
 renderWarnings();
+renderAnnotations();
 initialChat.forEach((item) => addChat(item.role, item.text));
 setAgentPresence("waiting");
