@@ -190,6 +190,9 @@ pnpm link
   Mark only custom (non-native) clickable elements with `data-lavish-action` so Lavish does not annotate them, and use `data-lavish-question` or `queueKey` when pre-send updates for the same question should replace each other.
   Queued annotation preview pills and chat history share a scrollable Conversation panel above a sticky composer, so long feedback queues do not push the text box or send controls off screen.
   The browser chrome keeps editing actions in the overflow menu (copy path, reload artifact, copy DOM snapshot, export standalone HTML, publish link, end session), while the composer exposes **Send & End** beside **Send to Agent** to submit queued prompts and user-ended attribution together.
+- **Annotation indicators** - Every annotated element carries a small dot in the artifact, and sent annotations stay listed in the Conversation panel for the rest of the session, so it is always visible what has already been reviewed.
+  Navigation runs both ways: clicking a dot scrolls to and highlights its row in the panel, and clicking a panel row (a queued pill or a sent annotation) scrolls the element into view and flashes a marker around it.
+  The dots are only clickable in annotate mode, so they never intercept clicks meant for the artifact while exploring.
 - **Keyboard shortcuts** - In the chrome composer, Enter sends queued prompts and Shift+Enter inserts a newline.
   In the annotation card, Enter queues the annotation, Shift+Enter inserts a newline, and Ctrl+Enter (Cmd+Enter on macOS) queues it and sends all queued prompts immediately.
   Cmd+I or Ctrl+I toggles between annotate and explore mode from either the browser chrome or the artifact iframe, including while focus is in a textarea or control.

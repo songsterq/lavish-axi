@@ -9,19 +9,8 @@ import { fileURLToPath } from "node:url";
 import chokidar from "chokidar";
 import express from "express";
 
-import {
-  classifySevereTextOverflow,
-  classifyMaterialRectEscape,
-  createArtifactSdk,
-  dedupeAnnotationTargets,
-  deriveLavishQueueKey,
-  findStableLayoutFindings,
-  isMaterialPageOverflow,
-  isModeToggleHotkeyEvent,
-  isNativeInteractiveControl,
-  isNearTotalOcclusion,
-  MODE_TOGGLE_HOTKEY_KEY,
-} from "./artifact-sdk.js";
+import { createArtifactSdk, MODE_TOGGLE_HOTKEY_KEY } from "./artifact-sdk.js";
+import * as artifactSdk from "./artifact-sdk.js";
 import {
   activeLayoutWarningCount,
   resolveDiagnosticViewportClasses,
@@ -1537,6 +1526,16 @@ export function createSdkJs(key, artifactRevision = 0, artifactLoadToken = "") {
   const mermaidHelperEntries = Object.entries(mermaidNode).filter(([, value]) => typeof value === "function");
   const mermaidHelperDecls = mermaidHelperEntries.map(([name, fn]) => `const ${name}=${fn.toString()};`).join("\n");
   const mermaidHelperKeys = mermaidHelperEntries.map(([name]) => name).join(", ");
+  // Same treatment for artifact-sdk.js's own helpers. A hand-kept list here is a silent
+  // ReferenceError waiting to happen: a helper called from inside createArtifactSdk but left out
+  // of the list passes build, lint, and typecheck and only fails in the browser, where it kills
+  // the feature with no error anywhere else.
+  const sdkHelperDecls = Object.entries(artifactSdk)
+    .filter(([name]) => name !== "createArtifactSdk")
+    .map(([name, value]) =>
+      typeof value === "function" ? `const ${name}=${value.toString()};` : `const ${name}=${JSON.stringify(value)};`,
+    )
+    .join("\n");
   const revisionNumber = Number(artifactRevision);
   const revision = Number.isFinite(revisionNumber) && revisionNumber >= 0 ? Math.trunc(revisionNumber) : 0;
   const loadToken = String(artifactLoadToken || "").slice(0, 200);
@@ -1545,16 +1544,8 @@ const key=${JSON.stringify(key)};
 void key;
 const artifactRevision=${revision};
 const artifactLoadToken=${JSON.stringify(loadToken)};
-const deriveQueueKey=${deriveLavishQueueKey.toString()};
-const isNativeInteractiveControl=${isNativeInteractiveControl.toString()};
-const MODE_TOGGLE_HOTKEY_KEY=${JSON.stringify(MODE_TOGGLE_HOTKEY_KEY)};
-const isModeToggleHotkeyEvent=${isModeToggleHotkeyEvent.toString()};
-const classifySevereTextOverflow=${classifySevereTextOverflow.toString()};
-const classifyMaterialRectEscape=${classifyMaterialRectEscape.toString()};
-const isMaterialPageOverflow=${isMaterialPageOverflow.toString()};
-const findStableLayoutFindings=${findStableLayoutFindings.toString()};
-const isNearTotalOcclusion=${isNearTotalOcclusion.toString()};
-const dedupeAnnotationTargets=${dedupeAnnotationTargets.toString()};
+${sdkHelperDecls}
+const deriveQueueKey=deriveLavishQueueKey;
 ${mermaidHelperDecls}
 const mermaidHelpers={ ${mermaidHelperKeys} };
 (${createArtifactSdk.toString()})(deriveQueueKey, isNativeInteractiveControl, mermaidHelpers, artifactRevision, artifactLoadToken);
