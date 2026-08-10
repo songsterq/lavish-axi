@@ -92,7 +92,7 @@ The reviewer handoff is a server-issued single-reviewer capability. Begin reques
 `applyDiagnosticPass` is conservative by construction and each guard is load-bearing: a pass for one viewport class returns other classes untouched; an incomplete pass marks active warnings `unverified` instead of clearing them; absence at a revision the warning was already seen on is not resolution; and re-observing an identical finding on the same revision returns the record unchanged so repeat passes do not rewrite `state.json`.
 `queued` is a request, not a fix - it stays in the active count and only `recurring` (a newer revision still found it) makes a warning selectable again.
 Display strings are computed server-side (`serializeLayoutWarnings`) because `src/chrome-client.js` is served as a raw file and cannot import modules; the chrome renders what it is given and never decides that a warning went away.
-The chrome bootstraps the inbox from `initialLayoutWarnings` in the session JSON and re-syncs over SSE, so the inbox survives a browser refresh or reconnect; only per-chrome view state (drawer selection, banner acknowledgement) lives in `sessionStorage`, keyed per session so it cannot leak across artifacts.
+The chrome bootstraps the inbox from `initialLayoutWarnings` in the session JSON and re-syncs over SSE, so the inbox survives a browser refresh or reconnect; only per-chrome drawer selection lives in `sessionStorage`, keyed per session so it cannot leak across artifacts.
 
 ### Live reload
 
@@ -192,6 +192,8 @@ No need to explicitly document the telemetry behaviors.
   - Finite animations settle before sampling, findings associated with still-active finite or infinite motion stay silent without hiding independent stable failures, and `findStableLayoutFindings` requires the same severe root in two samples.
   - Overlap reports only near-total coverage by one opaque static sibling; decorative transparent overlap stays silent. Warning-severity input is filtered again by the chrome and by `normalizeFindings` in `src/layout-warnings.js`.
   - The audit reports its own completeness. A failed run must publish `complete: false` with no findings, never an empty completed pass - an empty completed pass is read as evidence of repair, so the distinction is what keeps a crashed audit from silently resolving real warnings.
+
+- The self-paint check (`src/self-paint.js`, surfaced by `open`/`export`/`share` as `self_paint_warning`) is render-free and fails open by design: any stylesheet link, `@import`, Tailwind runtime script, `color-scheme`, or html/body/:root background signal suppresses it, because a false warning on every open is worse than a miss from this intentionally conservative static check. Keep it a warning - never a blocked open, never auto-repair.
 
 - The layout-warning inbox's rules are the product contract, not implementation detail - `src/layout-warnings.js` and `test/layout-warnings.test.js` are the authority, and the lifecycle is also restated for users in README and for agents in the poll guidance. Two invariants are easy to break by accident:
   - Nothing may clear a warning except a newer artifact revision plus a **complete** pass at the **same viewport class** that no longer detects it. Not a closed drawer, a checked box, a queued or delivered prompt, an agent reply, a reload in flight, a temporarily absent element, another viewport passing, or a failed diagnostic run.
